@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FunASR 语音识别</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .upload-section:hover {
+            border-color: #999;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .result-section {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            display: none;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.processing {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .status.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+        .task-id {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .transcription-result {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: white;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FunASR 语音识别</h1>
+        
+        <div class="upload-section">
+            <h2>上传音频文件</h2>
+            <p>支持 WAV, MP3, FLAC 等常见音频格式</p>
+            <input type="file" id="audioFile" accept="audio/*">
+            <br>
+            <button id="uploadBtn">开始转录</button>
+        </div>
+        
+        <div id="statusSection" class="status hidden">
+            <p>任务ID: <span id="taskId" class="task-id"></span></p>
+            <p>状态: <span id="statusText"></span></p>
+        </div>
+        
+        <div id="resultSection" class="result-section">
+            <h3>转录结果</h3>
+            <div id="transcriptionResult" class="transcription-result"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const audioFileInput = document.getElementById('audioFile');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const statusSection = document.getElementById('statusSection');
+            const resultSection = document.getElementById('resultSection');
+            const taskIdSpan = document.getElementById('taskId');
+            const statusText = document.getElementById('statusText');
+            const transcriptionResult = document.getElementById('transcriptionResult');
+            
+            let taskId = null;
+            let pollInterval = null;
+            
+            uploadBtn.addEventListener('click', uploadFile);
+            
+            function uploadFile() {
+                const file = audioFileInput.files[0];
+                if (!file) {
+                    alert('请选择一个音频文件');
+                    return;
+                }
+                
+                // 禁用上传按钮
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = '上传中...';
+                
+                // 创建FormData对象
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // 发送上传请求
+                fetch('/transcribe/', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.task_id) {
+                        taskId = data.task_id;
+                        taskIdSpan.textContent = taskId;
+                        statusText.textContent = '处理中...';
+                        statusSection.classList.remove('hidden');
+                        
+                        // 开始轮询任务状态
+                        startPolling();
+                    } else {
+                        throw new Error('未能获取任务ID');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    statusSection.className = 'status error';
+                    statusText.textContent = '上传失败: ' + error.message;
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = '开始转录';
+                });
+            }
+            
+            function startPolling() {
+                // 清除之前的轮询
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                }
+                
+                // 每2秒轮询一次任务状态
+                pollInterval = setInterval(checkTaskStatus, 2000);
+            }
+            
+            function checkTaskStatus() {
+                if (!taskId) return;
+                
+                fetch(`/task/${taskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    statusText.textContent = data.status;
+                    
+                    if (data.status === 'SUCCESS') {
+                        // 任务成功完成
+                        clearInterval(pollInterval);
+                        statusSection.className = 'status success';
+                        
+                        // 显示转录结果
+                        if (data.result && data.result.text) {
+                            transcriptionResult.textContent = data.result.text;
+                        } else if (data.result && typeof data.result === 'object') {
+                            transcriptionResult.textContent = JSON.stringify(data.result, null, 2);
+                        } else {
+                            transcriptionResult.textContent = '转录完成，但没有文本结果';
+                        }
+                        
+                        resultSection.style.display = 'block';
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '开始转录';
+                    } else if (data.status === 'FAILURE' || data.error) {
+                        // 任务失败
+                        clearInterval(pollInterval);
+                        statusSection.className = 'status error';
+                        statusText.textContent = '任务失败: ' + (data.error || '未知错误');
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = '开始转录';
+                    } else {
+                        // 任务仍在进行中
+                        statusSection.className = 'status processing';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking task status:', error);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
