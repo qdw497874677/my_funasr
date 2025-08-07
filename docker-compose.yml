@@ -14,7 +14,7 @@ services:
     build: .
     container_name: funasr_web
     ports:
-      - "8000:8000"
+      - "18888:8000"
     depends_on:
       - redis
     environment:
