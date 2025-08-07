@@ -9,10 +9,12 @@ ENV PYTHONPATH=/app
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libsndfile1 \
-    ffmpeg \
+RUN set -ex \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        libsndfile1 \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制requirements.txt并安装Python依赖
